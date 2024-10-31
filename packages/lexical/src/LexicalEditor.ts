@@ -1,5 +1,6 @@
-import { EditorState } from './LexicalEditorState';
+import { createEmptyEditorState, EditorState } from './LexicalEditorState';
 import { LexicalNode } from './LexicalNode';
+import { internalGetActiveEditor } from './LexicalUpdates';
 
 type GenericConstructor<T> = new (...args: any[]) => T;
 export type KlassConstructor<Cls extends GenericConstructor<any>> =
@@ -54,6 +55,14 @@ export type CreateEditorArgs = {
 };
 
 export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
+  const config = editorConfig || {};
+  const activeEditor = internalGetActiveEditor();
+  const theme = config.theme || {};
+  const parentEditor =
+    editorConfig === undefined ? activeEditor : config.parentEditor || null;
+  const disableEvents = config.disableEvents || false;
+  const editorState = createEmptyEditorState();
+
   const editor = new LexicalEditor();
 
   return editor;
