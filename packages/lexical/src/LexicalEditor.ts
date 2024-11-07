@@ -1,6 +1,12 @@
 import { createEmptyEditorState, EditorState } from './LexicalEditorState';
-import { LexicalNode } from './LexicalNode';
+import { DOMExportOutput, LexicalNode } from './LexicalNode';
 import { internalGetActiveEditor } from './LexicalUpdates';
+import { createUID } from './LexicalUtils';
+import { LineBreakNode } from './nodes/LexicalLineBreakNode';
+import { RootNode } from './nodes/LexicalRootNode';
+import { TextNode } from './nodes/LexicalTextNode';
+import { TabNode } from './nodes/LexicalTabNode';
+import { ParagraphNode } from './nodes/LexicalParagraphNode';
 
 type GenericConstructor<T> = new (...args: any[]) => T;
 export type KlassConstructor<Cls extends GenericConstructor<any>> =
@@ -10,6 +16,12 @@ export type Klass<T extends LexicalNode> =
   InstanceType<T['constructor']> extends T
     ? T['constructor']
     : GenericConstructor<T> & T['constructor'];
+
+export type EditorConfig = {
+  disableEvents?: boolean;
+  namespace: string;
+  theme: EditorThemeClasses;
+};
 
 export type LexicalNodeReplacement = {
   replace: Klass<LexicalNode>;
@@ -54,6 +66,21 @@ export type CreateEditorArgs = {
   html?: HTMLConfig;
 };
 
+export type Transform<T extends LexicalNode> = (node: T) => void;
+
+export type RegisteredNode = {
+  klass: Klass<LexicalNode>;
+  transforms: Set<Transform<LexicalNode>>;
+  replace: null | ((node: LexicalNode) => LexicalNode);
+  replaceWithKlass: null | Klass<LexicalNode>;
+  exportDOM?: (
+    editor: LexicalEditor,
+    targetNode: LexicalNode,
+  ) => DOMExportOutput;
+};
+
+export type RegisteredNodes = Map<string, RegisteredNode>;
+
 export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
   const config = editorConfig || {};
   const activeEditor = internalGetActiveEditor();
@@ -62,6 +89,21 @@ export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
     editorConfig === undefined ? activeEditor : config.parentEditor || null;
   const disableEvents = config.disableEvents || false;
   const editorState = createEmptyEditorState();
+  const namespace =
+    config.namespace ||
+    (parentEditor !== null ? parentEditor._config.namespace : createUID());
+  const initialEditorState = config.editorState;
+  const nodes = [
+    RootNode,
+    TextNode,
+    LineBreakNode,
+    TabNode,
+    ParagraphNode,
+    ...(config.nodes || []),
+  ];
+  const { onError, html } = config;
+  const isEditable = config.editable !== undefined ? config.editable : true;
+  let registeredNodes: Map<string, RegisteredNode>;
 
   const editor = new LexicalEditor();
 
@@ -70,4 +112,7 @@ export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
 
 export class LexicalEditor {
   ['constructor']!: KlassConstructor<typeof LexicalEditor>;
+
+  _config: EditorConfig;
+  _nodes: RegisteredNodes;
 }
