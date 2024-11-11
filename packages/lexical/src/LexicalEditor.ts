@@ -1,5 +1,10 @@
 import { createEmptyEditorState, EditorState } from './LexicalEditorState';
-import { DOMExportOutput, LexicalNode } from './LexicalNode';
+import {
+  DOMConversionMap,
+  DOMExportOutput,
+  DOMExportOutputMap,
+  LexicalNode,
+} from './LexicalNode';
 import { internalGetActiveEditor } from './LexicalUpdates';
 import { createUID } from './LexicalUtils';
 import { LineBreakNode } from './nodes/LexicalLineBreakNode';
@@ -49,9 +54,8 @@ export type EditorThemeClasses = {
 };
 
 export type HTMLConfig = {
-  // TODO: Complete this
-  export?: {};
-  import?: {};
+  export?: DOMExportOutputMap;
+  import?: DOMConversionMap;
 };
 
 export type CreateEditorArgs = {
@@ -129,9 +133,7 @@ export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
       }
 
       registeredNodes.set(type, {
-        // TODO: complete exportDOM
-        // exportDOM: html && html.export ? html.export.get(klass) : undefined,
-        exportDOM: undefined,
+        exportDOM: html && html.export ? html.export.get(klass) : undefined,
         klass,
         replace,
         replaceWithKlass,
