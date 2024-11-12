@@ -1,5 +1,6 @@
 import { createEmptyEditorState, EditorState } from './LexicalEditorState';
 import {
+  DOMConversion,
   DOMConversionMap,
   DOMExportOutput,
   DOMExportOutputMap,
@@ -12,6 +13,7 @@ import { RootNode } from './nodes/LexicalRootNode';
 import { TextNode } from './nodes/LexicalTextNode';
 import { TabNode } from './nodes/LexicalTabNode';
 import { ParagraphNode } from './nodes/LexicalParagraphNode';
+import { FULL_RECONCILE } from './LexicalConstants';
 
 type GenericConstructor<T> = new (...args: any[]) => T;
 export type KlassConstructor<Cls extends GenericConstructor<any>> =
@@ -85,6 +87,49 @@ export type RegisteredNode = {
 
 export type RegisteredNodes = Map<string, RegisteredNode>;
 
+type DOMConversionCache = Map<
+  string,
+  Array<(node: Node) => DOMConversion | null>
+>;
+
+function initializeConversionCache(
+  nodes: RegisteredNodes,
+  additionalConversions?: DOMConversionMap,
+): DOMConversionCache {
+  const conversionCache = new Map();
+  const handledConversions = new Set();
+  const addConversionsToCache = (map: DOMConversionMap) => {
+    Object.keys(map).forEach(key => {
+      let currentCache = conversionCache.get(key);
+
+      if (currentCache === undefined) {
+        currentCache = [];
+        conversionCache.set(key, currentCache);
+      }
+
+      currentCache.push(map[key]);
+    });
+  };
+  nodes.forEach(node => {
+    const importDOM = node.klass.importDOM;
+
+    if (importDOM == null || handledConversions.has(importDOM)) {
+      return;
+    }
+
+    handledConversions.add(importDOM);
+    const map = importDOM.call(node.klass);
+
+    if (map !== null) {
+      addConversionsToCache(map);
+    }
+  });
+  if (additionalConversions) {
+    addConversionsToCache(additionalConversions);
+  }
+  return conversionCache;
+}
+
 export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
   const config = editorConfig || {};
   const activeEditor = internalGetActiveEditor();
@@ -142,7 +187,24 @@ export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
     }
   }
 
-  const editor = new LexicalEditor();
+  const editor = new LexicalEditor(
+    editorState,
+    parentEditor,
+    registeredNodes,
+    {
+      disableEvents,
+      namespace,
+      theme,
+    },
+    onError ? onError : console.error,
+    initializeConversionCache(registeredNodes, html ? html.import : undefined),
+    isEditable,
+  );
+
+  if (initialEditorState !== undefined) {
+    editor._pendingEditorState = initialEditorState;
+    editor._dirtyType = FULL_RECONCILE;
+  }
 
   return editor;
 }
@@ -150,6 +212,34 @@ export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
 export class LexicalEditor {
   ['constructor']!: KlassConstructor<typeof LexicalEditor>;
 
+  _parentEditor: null | LexicalEditor;
+  _rootElement: null | HTMLElement;
+  _editorState: EditorState;
+  _pendingEditorState: null | EditorState;
   _config: EditorConfig;
+  _dirtyType: 0 | 1 | 2;
   _nodes: RegisteredNodes;
+  _htmlConversions: DOMConversionCache;
+  _onError: ErrorHandler;
+  _editable: boolean;
+
+  constructor(
+    editorState: EditorState,
+    parentEditor: null | LexicalEditor,
+    nodes: RegisteredNodes,
+    config: EditorConfig,
+    onError: ErrorHandler,
+    htmlConversions: DOMConversionCache,
+    editable: boolean,
+  ) {
+    this._parentEditor = parentEditor;
+    this._rootElement = null;
+    this._editorState = editorState;
+    this._pendingEditorState = null;
+    this._config = config;
+    this._nodes = nodes;
+    this._onError = onError;
+    this._htmlConversions = htmlConversions;
+    this._editable = editable;
+  }
 }
