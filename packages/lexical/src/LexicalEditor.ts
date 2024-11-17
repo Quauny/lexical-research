@@ -7,7 +7,7 @@ import {
   LexicalNode,
 } from './LexicalNode';
 import { internalGetActiveEditor } from './LexicalUpdates';
-import { createUID } from './LexicalUtils';
+import { createUID, getCachedClassNameArray } from './LexicalUtils';
 import { LineBreakNode } from './nodes/LexicalLineBreakNode';
 import { RootNode } from './nodes/LexicalRootNode';
 import { TextNode } from './nodes/LexicalTextNode';
@@ -53,6 +53,7 @@ export type EditorThemeClasses = {
     h5?: EditorThemeClassName;
     h6?: EditorThemeClassName;
   };
+  [key: string]: any;
 };
 
 export type HTMLConfig = {
@@ -241,5 +242,16 @@ export class LexicalEditor {
     this._onError = onError;
     this._htmlConversions = htmlConversions;
     this._editable = editable;
+  }
+
+  setRootElement(nextRootElement: null | HTMLElement): void {
+    const prevRootElement = this._rootElement;
+
+    if (nextRootElement !== prevRootElement) {
+      const classNames = getCachedClassNameArray(this._config.theme, 'root');
+      const pendingEditorState = this._pendingEditorState || this._editorState;
+      this._rootElement = nextRootElement;
+      // TODO: continue here
+    }
   }
 }
