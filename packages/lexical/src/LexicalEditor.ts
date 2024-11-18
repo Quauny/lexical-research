@@ -5,6 +5,7 @@ import {
   DOMExportOutput,
   DOMExportOutputMap,
   LexicalNode,
+  NodeKey,
 } from './LexicalNode';
 import { internalGetActiveEditor } from './LexicalUpdates';
 import { createUID, getCachedClassNameArray } from './LexicalUtils';
@@ -92,6 +93,29 @@ type DOMConversionCache = Map<
   string,
   Array<(node: Node) => DOMConversion | null>
 >;
+
+export function resetEditor(
+  editor: LexicalEditor,
+  prevRootElement: null | HTMLElement,
+  nextRootElement: null | HTMLElement,
+  pendingEditorState: EditorState,
+): void {
+  const keyNodeMap = editor._keyToDOMMap;
+  keyNodeMap.clear();
+  editor._editorState = createEmptyEditorState();
+  editor._pendingEditorState = pendingEditorState;
+  // TODO: finish this function
+
+  // Remove all the DOM nodes from the root element
+  if (prevRootElement !== null) {
+    prevRootElement.textContent = '';
+  }
+
+  if (nextRootElement !== null) {
+    nextRootElement.textContent = '';
+    keyNodeMap.set('root', nextRootElement);
+  }
+}
 
 function initializeConversionCache(
   nodes: RegisteredNodes,
@@ -217,6 +241,7 @@ export class LexicalEditor {
   _rootElement: null | HTMLElement;
   _editorState: EditorState;
   _pendingEditorState: null | EditorState;
+  _keyToDOMMap: Map<NodeKey, HTMLElement>;
   _config: EditorConfig;
   _dirtyType: 0 | 1 | 2;
   _nodes: RegisteredNodes;
@@ -242,8 +267,14 @@ export class LexicalEditor {
     this._onError = onError;
     this._htmlConversions = htmlConversions;
     this._editable = editable;
+
+    // TODO: finish this constructor function
   }
 
+  /**
+   * Imperatively set the root contenteditable element that Lexical listens
+   * for events on.
+   */
   setRootElement(nextRootElement: null | HTMLElement): void {
     const prevRootElement = this._rootElement;
 
@@ -251,7 +282,7 @@ export class LexicalEditor {
       const classNames = getCachedClassNameArray(this._config.theme, 'root');
       const pendingEditorState = this._pendingEditorState || this._editorState;
       this._rootElement = nextRootElement;
-      // TODO: continue here
+      resetEditor(this, prevRootElement, nextRootElement, pendingEditorState);
     }
   }
 }
