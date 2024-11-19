@@ -422,6 +422,8 @@ export class LexicalEditor {
       const pendingEditorState = this._pendingEditorState || this._editorState;
       this._rootElement = nextRootElement;
       resetEditor(this, prevRootElement, nextRootElement, pendingEditorState);
+
+      // TODO: continue here
     }
   }
 }
