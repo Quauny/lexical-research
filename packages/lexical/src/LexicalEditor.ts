@@ -168,7 +168,22 @@ export function resetEditor(
   keyNodeMap.clear();
   editor._editorState = createEmptyEditorState();
   editor._pendingEditorState = pendingEditorState;
-  // TODO: finish this function
+  editor._compositionKey = null;
+  editor._dirtyType = NO_DIRTY_NODES;
+  editor._cloneNotNeeded.clear();
+  editor._dirtyLeaves = new Set();
+  editor._dirtyElements.clear();
+  editor._normalizedNodes = new Set();
+  editor._updateTags = new Set();
+  editor._updates = [];
+  editor._blockCursorElement = null;
+
+  const observer = editor._observer;
+
+  if (observer !== null) {
+    observer.disconnect();
+    editor._observer = null;
+  }
 
   // Remove all the DOM nodes from the root element
   if (prevRootElement !== null) {
