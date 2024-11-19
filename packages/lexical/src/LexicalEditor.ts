@@ -14,7 +14,7 @@ import { RootNode } from './nodes/LexicalRootNode';
 import { TextNode } from './nodes/LexicalTextNode';
 import { TabNode } from './nodes/LexicalTabNode';
 import { ParagraphNode } from './nodes/LexicalParagraphNode';
-import { FULL_RECONCILE } from './LexicalConstants';
+import { FULL_RECONCILE, NO_DIRTY_NODES } from './LexicalConstants';
 
 type GenericConstructor<T> = new (...args: any[]) => T;
 export type KlassConstructor<Cls extends GenericConstructor<any>> =
@@ -41,6 +41,13 @@ export type LexicalNodeReplacement = {
 };
 
 export type ErrorHandler = (error: Error) => void;
+
+export type EditorUpdateOptions = {
+  onUpdate?: () => void;
+  skipTransforms?: true;
+  tag?: string | Array<string>;
+  discrete?: true;
+};
 
 export type EditorThemeClassName = string;
 
@@ -92,6 +99,63 @@ export type RegisteredNodes = Map<string, RegisteredNode>;
 type DOMConversionCache = Map<
   string,
   Array<(node: Node) => DOMConversion | null>
+>;
+
+export type NodeMutation = 'created' | 'updated' | 'destroyed';
+
+type IntentionallyMarkedAsDirtyElement = boolean;
+
+export type UpdateListener = (arg0: {
+  dirtyElements: Map<NodeKey, IntentionallyMarkedAsDirtyElement>;
+  dirtyLeaves: Set<NodeKey>;
+  editorState: EditorState;
+  normalizedNodes: Set<NodeKey>;
+  prevEditorState: EditorState;
+  tags: Set<string>;
+}) => void;
+
+export type DecoratorListener<T = never> = (
+  decorator: Record<NodeKey, T>,
+) => void;
+
+export type MutationListener = (
+  nodes: Map<NodeKey, NodeMutation>,
+  payload: {
+    updateTags: Set<string>;
+    dirtyLeaves: Set<string>;
+    prevEditorState: EditorState;
+  },
+) => void;
+
+export type MutationListeners = Map<MutationListener, Klass<LexicalNode>>;
+
+export type EditableListener = (editable: boolean) => void;
+
+export type RootListener = (
+  rootElement: null | HTMLElement,
+  prevRootElement: null | HTMLElement,
+) => void;
+
+export type TextContentListener = (text: string) => void;
+
+type Listeners = {
+  decorator: Set<DecoratorListener>;
+  mutation: MutationListeners;
+  editable: Set<EditableListener>;
+  root: Set<RootListener>;
+  textcontent: Set<TextContentListener>;
+  update: Set<UpdateListener>;
+};
+
+export type LexicalCommand<TPayload> = {
+  type?: string;
+};
+
+export type CommandListener<P> = (payload: P, editor: LexicalEditor) => boolean;
+
+type Commands = Map<
+  LexicalCommand<unknown>,
+  Array<Set<CommandListener<unknown>>>
 >;
 
 export function resetEditor(
@@ -237,17 +301,38 @@ export function createEditor(editorConfig?: CreateEditorArgs): LexicalEditor {
 export class LexicalEditor {
   ['constructor']!: KlassConstructor<typeof LexicalEditor>;
 
+  /** The version with build identifiers for this editor (since 0.17.1) */
+  static version: string | undefined;
+
+  _headless: boolean;
   _parentEditor: null | LexicalEditor;
   _rootElement: null | HTMLElement;
   _editorState: EditorState;
   _pendingEditorState: null | EditorState;
+  _compositionKey: null | NodeKey;
+  _deferred: Array<() => void>;
   _keyToDOMMap: Map<NodeKey, HTMLElement>;
+  _updates: Array<[() => void, EditorUpdateOptions | undefined]>;
+  _updating: boolean;
+  _listeners: Listeners;
+  _commands: Commands;
+  _nodes: RegisteredNodes;
+  _decorators: Record<NodeKey, unknown>;
+  _pendingDecorators: null | Record<NodeKey, unknown>;
   _config: EditorConfig;
   _dirtyType: 0 | 1 | 2;
-  _nodes: RegisteredNodes;
-  _htmlConversions: DOMConversionCache;
+  _cloneNotNeeded: Set<NodeKey>;
+  _dirtyLeaves: Set<NodeKey>;
+  _dirtyElements: Map<NodeKey, IntentionallyMarkedAsDirtyElement>;
+  _normalizedNodes: Set<NodeKey>;
+  _updateTags: Set<string>;
+  _observer: null | MutationObserver;
+  _key: string;
   _onError: ErrorHandler;
+  _htmlConversions: DOMConversionCache;
+  _window: null | Window;
   _editable: boolean;
+  _blockCursorElement: null | HTMLDivElement;
 
   constructor(
     editorState: EditorState,
@@ -259,16 +344,55 @@ export class LexicalEditor {
     editable: boolean,
   ) {
     this._parentEditor = parentEditor;
+    // The root element associated with this editor
     this._rootElement = null;
+    // The current editor state
     this._editorState = editorState;
+    // Handling of drafts and updates
     this._pendingEditorState = null;
+    // Used to help co-ordinate selection and events
+    this._compositionKey = null;
+    this._deferred = [];
+    // Used during reconciliation
+    this._keyToDOMMap = new Map();
+    this._updates = [];
+    this._updating = false;
+    // Listeners
+    this._listeners = {
+      decorator: new Set(),
+      editable: new Set(),
+      mutation: new Map(),
+      root: new Set(),
+      textcontent: new Set(),
+      update: new Set(),
+    };
+    // Commands
+    this._commands = new Map();
+    // Editor configuration for theme/context.
     this._config = config;
+    // Mapping of types to their nodes
     this._nodes = nodes;
+    // React node decorators for portals
+    this._decorators = {};
+    this._pendingDecorators = null;
+    // Used to optimize reconciliation
+    this._dirtyType = NO_DIRTY_NODES;
+    this._cloneNotNeeded = new Set();
+    this._dirtyLeaves = new Set();
+    this._dirtyElements = new Map();
+    this._normalizedNodes = new Set();
+    this._updateTags = new Set();
+    // Handling of DOM mutations
+    this._observer = null;
+    // Used for identifying owning editors
+    this._key = createUID();
+
     this._onError = onError;
     this._htmlConversions = htmlConversions;
     this._editable = editable;
-
-    // TODO: finish this constructor function
+    this._headless = parentEditor !== null && parentEditor._headless;
+    this._window = null;
+    this._blockCursorElement = null;
   }
 
   /**
