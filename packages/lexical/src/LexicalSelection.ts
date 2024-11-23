@@ -1,4 +1,6 @@
+import { LexicalEditor } from './LexicalEditor';
 import { LexicalNode, NodeKey } from './LexicalNode';
+import { getActiveEditor } from './LexicalUpdates';
 import { ElementNode } from './nodes/LexicalElementNode';
 import { TextNode } from './nodes/LexicalTextNode';
 
@@ -43,4 +45,53 @@ export interface BaseSelection {
   isBackward(): boolean;
   getCachedNodes(): LexicalNode[] | null;
   setCachedNodes(nodes: LexicalNode[] | null): void;
+}
+
+// @ts-ignore
+// TODO: implement this
+export class RangeSelection implements BaseSelection {
+  format: number;
+  style: string;
+  anchor: PointType;
+  focus: PointType;
+  _cachedNodes: Array<LexicalNode> | null;
+  dirty: boolean;
+
+  constructor(
+    anchor: PointType,
+    focus: PointType,
+    format: number,
+    style: string,
+  ) {
+    this.anchor = anchor;
+    this.focus = focus;
+    // @ts-ignore
+    anchor._selection = this;
+    // @ts-ignore
+    focus._selection = this;
+    this._cachedNodes = null;
+    this.format = format;
+    this.style = style;
+    this.dirty = false;
+  }
+}
+
+export function $getPreviousSelection(): null | BaseSelection {
+  const editor = getActiveEditor();
+  return editor._editorState._selection;
+}
+
+export function $internalCreateRangeSelection(
+  lastSelection: null | BaseSelection,
+  domSelection: Selection | null,
+  editor: LexicalEditor,
+  event: UIEvent | Event | null,
+): null | RangeSelection {
+  const windowObj = editor._window;
+  if (windowObj === null) {
+    return null;
+  }
+
+  // TODO: Finish this
+  return null;
 }

@@ -15,6 +15,7 @@ import { TextNode } from './nodes/LexicalTextNode';
 import { TabNode } from './nodes/LexicalTabNode';
 import { ParagraphNode } from './nodes/LexicalParagraphNode';
 import { FULL_RECONCILE, NO_DIRTY_NODES } from './LexicalConstants';
+import { removeRootElementEvents } from './LexicalEvents';
 
 type GenericConstructor<T> = new (...args: any[]) => T;
 export type KlassConstructor<Cls extends GenericConstructor<any>> =
@@ -423,7 +424,15 @@ export class LexicalEditor {
       this._rootElement = nextRootElement;
       resetEditor(this, prevRootElement, nextRootElement, pendingEditorState);
 
-      // TODO: continue here
+      if (prevRootElement !== null) {
+        // EXTERNAL TODO: remove this flag once we no longer use UEv2 internally
+        if (!this._config.disableEvents) {
+          removeRootElementEvents(prevRootElement);
+        }
+        if (classNames != null) {
+          prevRootElement.classList.remove(...classNames);
+        }
+      }
     }
   }
 }
