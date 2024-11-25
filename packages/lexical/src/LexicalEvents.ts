@@ -1,4 +1,15 @@
 import invariant from '../../shared/src/invariant';
+import {
+  BLUR_COMMAND,
+  COPY_COMMAND,
+  CUT_COMMAND,
+  DRAGEND_COMMAND,
+  DRAGOVER_COMMAND,
+  DRAGSTART_COMMAND,
+  DROP_COMMAND,
+  FOCUS_COMMAND,
+  PASTE_COMMAND,
+} from './LexicalCommands';
 import { DOM_ELEMENT_TYPE, DOM_TEXT_TYPE } from './LexicalConstants';
 import { LexicalEditor } from './LexicalEditor';
 import {
@@ -8,6 +19,7 @@ import {
 import { updateEditor } from './LexicalUpdates';
 import {
   $setSelection,
+  dispatchCommand,
   getDOMSelection,
   getEditorPropertyFromDOMNode,
   getEditorsToPropagate,
@@ -20,6 +32,45 @@ let isSelectionChangeFromMouseDown = false;
 // Mapping root editors to their active nested editors, contains nested editors
 // mapping only, so if root editor is selected map will have no reference to free up memory
 const activeNestedEditorsMap: Map<string, LexicalEditor> = new Map();
+
+type RootElementEvents = Array<
+  [
+    string,
+    Record<string, unknown> | ((event: Event, editor: LexicalEditor) => void),
+  ]
+>;
+
+const PASS_THROUGH_COMMAND = Object.freeze({});
+const rootElementEvents: RootElementEvents = [
+  ['keydown', onKeyDown],
+  ['pointerdown', onPointerDown],
+  ['compositionstart', onCompositionStart],
+  ['compositionend', onCompositionEnd],
+  ['input', onInput],
+  ['click', onClick],
+  ['cut', PASS_THROUGH_COMMAND],
+  ['copy', PASS_THROUGH_COMMAND],
+  ['dragstart', PASS_THROUGH_COMMAND],
+  ['dragover', PASS_THROUGH_COMMAND],
+  ['dragend', PASS_THROUGH_COMMAND],
+  ['paste', PASS_THROUGH_COMMAND],
+  ['focus', PASS_THROUGH_COMMAND],
+  ['blur', PASS_THROUGH_COMMAND],
+  ['drop', PASS_THROUGH_COMMAND],
+];
+
+function onKeyDown(event: KeyboardEvent, editor: LexicalEditor): void {}
+function onPointerDown(event: PointerEvent, editor: LexicalEditor) {}
+function onCompositionStart(
+  event: CompositionEvent,
+  editor: LexicalEditor,
+): void {}
+function onCompositionEnd(
+  event: CompositionEvent,
+  editor: LexicalEditor,
+): void {}
+function onInput(event: InputEvent, editor: LexicalEditor): void {}
+function onClick(event: PointerEvent, editor: LexicalEditor): void {}
 
 function cleanActiveNestedEditorsMap(editor: LexicalEditor) {
   if (editor._parentEditor !== null) {
@@ -168,4 +219,125 @@ export function removeRootElementEvents(rootElement: HTMLElement): void {
 
   // @ts-expect-error: internal field
   rootElement.__lexicalEventHandles = [];
+}
+
+function stopLexicalPropagation(event: Event): void {
+  // We attach a special property to ensure the same event doesn't re-fire
+  // for parent editors.
+  // @ts-ignore
+  event._lexicalHandled = true;
+}
+
+function hasStoppedLexicalPropagation(event: Event): boolean {
+  // @ts-ignore
+  const stopped = event._lexicalHandled === true;
+  return stopped;
+}
+
+export function addRootElementEvents(
+  rootElement: HTMLElement,
+  editor: LexicalEditor,
+): void {
+  // We only want to have a single global selectionchange event handler, shared
+  // between all editor instances.
+  const doc = rootElement.ownerDocument;
+  const documentRootElementsCount = rootElementsRegistered.get(doc);
+  if (
+    documentRootElementsCount === undefined ||
+    documentRootElementsCount < 1
+  ) {
+    doc.addEventListener('selectionchange', onDocumentSelectionChange);
+  }
+  rootElementsRegistered.set(doc, (documentRootElementsCount || 0) + 1);
+
+  // @ts-expect-error: internal field
+  rootElement.__lexicalEditor = editor;
+  const removeHandles = getRootElementRemoveHandles(rootElement);
+
+  for (let i = 0; i < rootElementEvents.length; i++) {
+    const [eventName, onEvent] = rootElementEvents[i];
+    const eventHandler =
+      typeof onEvent === 'function'
+        ? (event: Event) => {
+            if (hasStoppedLexicalPropagation(event)) {
+              return;
+            }
+            stopLexicalPropagation(event);
+            if (editor.isEditable() || eventName === 'click') {
+              onEvent(event, editor);
+            }
+          }
+        : (event: Event) => {
+            if (hasStoppedLexicalPropagation(event)) {
+              return;
+            }
+            stopLexicalPropagation(event);
+            const isEditable = editor.isEditable();
+            switch (eventName) {
+              case 'cut':
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, CUT_COMMAND, event as ClipboardEvent)
+                );
+
+              case 'copy':
+                return dispatchCommand(
+                  editor,
+                  COPY_COMMAND,
+                  event as ClipboardEvent,
+                );
+
+              case 'paste':
+                return (
+                  isEditable &&
+                  dispatchCommand(
+                    editor,
+                    PASTE_COMMAND,
+                    event as ClipboardEvent,
+                  )
+                );
+
+              case 'dragstart':
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, DRAGSTART_COMMAND, event as DragEvent)
+                );
+
+              case 'dragover':
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, DRAGOVER_COMMAND, event as DragEvent)
+                );
+
+              case 'dragend':
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, DRAGEND_COMMAND, event as DragEvent)
+                );
+
+              case 'focus':
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, FOCUS_COMMAND, event as FocusEvent)
+                );
+
+              case 'blur': {
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, BLUR_COMMAND, event as FocusEvent)
+                );
+              }
+
+              case 'drop':
+                return (
+                  isEditable &&
+                  dispatchCommand(editor, DROP_COMMAND, event as DragEvent)
+                );
+            }
+          };
+    rootElement.addEventListener(eventName, eventHandler);
+    removeHandles.push(() => {
+      rootElement.removeEventListener(eventName, eventHandler);
+    });
+  }
 }

@@ -1,6 +1,13 @@
 import invariant from '../../shared/src/invariant';
-import { EditorUpdateOptions, LexicalEditor } from './LexicalEditor';
+import {
+  CommandPayloadType,
+  EditorUpdateOptions,
+  LexicalCommand,
+  LexicalEditor,
+  Listener,
+} from './LexicalEditor';
 import { EditorState } from './LexicalEditorState';
+import { getEditorsToPropagate } from './LexicalUtils';
 
 let activeEditorState: null | EditorState = null;
 let activeEditor: null | LexicalEditor = null;
@@ -67,5 +74,75 @@ export function updateEditor(
     editor._updates.push([updateFn, options]);
   } else {
     $beginUpdate(editor, updateFn, options);
+  }
+}
+
+export function $commitPendingUpdates(
+  editor: LexicalEditor,
+  recoveryEditorState?: EditorState,
+): void {
+  // TODO: Finish this function
+}
+
+export function triggerCommandListeners<
+  TCommand extends LexicalCommand<unknown>,
+>(
+  editor: LexicalEditor,
+  type: TCommand,
+  payload: CommandPayloadType<TCommand>,
+): boolean {
+  if (editor._updating === false || activeEditor !== editor) {
+    let returnVal = false;
+    editor.update(() => {
+      returnVal = triggerCommandListeners(editor, type, payload);
+    });
+    return returnVal;
+  }
+
+  const editors = getEditorsToPropagate(editor);
+
+  for (let i = 4; i >= 0; i--) {
+    for (let e = 0; e < editors.length; e++) {
+      const currentEditor = editors[e];
+      const commandListeners = currentEditor._commands;
+      const listenerInPriorityOrder = commandListeners.get(type);
+
+      if (listenerInPriorityOrder !== undefined) {
+        const listenersSet = listenerInPriorityOrder[i];
+
+        if (listenersSet !== undefined) {
+          const listeners = Array.from(listenersSet);
+          const listenersLength = listeners.length;
+
+          for (let j = 0; j < listenersLength; j++) {
+            if (listeners[j](payload, editor) === true) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+export function triggerListeners(
+  type: 'update' | 'root' | 'decorator' | 'textcontent' | 'editable',
+  editor: LexicalEditor,
+  isCurrentlyEnqueuingUpdates: boolean,
+  ...payload: unknown[]
+): void {
+  const previouslyUpdating = editor._updating;
+  editor._updating = isCurrentlyEnqueuingUpdates;
+
+  try {
+    const listeners = Array.from<Listener>(editor._listeners[type]);
+    for (let i = 0; i < listeners.length; i++) {
+      // @ts-ignore
+      listeners[i].apply(null, payload);
+    }
+  } finally {
+    editor._updating = previouslyUpdating;
   }
 }

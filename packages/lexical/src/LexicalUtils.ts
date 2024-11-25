@@ -1,14 +1,37 @@
 import { CAN_USE_DOM } from '../../shared/src/canUseDOM';
+import invariant from '../../shared/src/invariant';
 import normalizeClassNames from '../../shared/src/normalizeClassNames';
-import { EditorThemeClasses, LexicalEditor } from './LexicalEditor';
+import {
+  CommandPayloadType,
+  EditorThemeClasses,
+  LexicalCommand,
+  LexicalEditor,
+} from './LexicalEditor';
 import { BaseSelection } from './LexicalSelection';
-import { errorOnReadOnly, getActiveEditorState } from './LexicalUpdates';
+import {
+  errorOnReadOnly,
+  getActiveEditorState,
+  triggerCommandListeners,
+} from './LexicalUpdates';
 
 export function createUID(): string {
   return Math.random()
     .toString(36)
     .replace(/[^a-z]+/g, '')
     .substr(0, 5);
+}
+
+export function getDefaultView(domElem: HTMLElement): Window | null {
+  const ownerDoc = domElem.ownerDocument;
+  return (ownerDoc && ownerDoc.defaultView) || null;
+}
+
+export function getWindow(editor: LexicalEditor): Window {
+  const windowObj = editor._window;
+  if (windowObj === null) {
+    invariant(false, 'window object not found');
+  }
+  return windowObj;
 }
 
 export function getDOMSelection(targetWindow: null | Window): null | Selection {
@@ -91,4 +114,12 @@ export function getEditorsToPropagate(editor: LexicalEditor) {
     currentEditor = currentEditor._parentEditor;
   }
   return editorsToPropagate;
+}
+
+export function dispatchCommand<TCommand extends LexicalCommand<unknown>>(
+  editor: LexicalEditor,
+  command: TCommand,
+  payload: CommandPayloadType<TCommand>,
+): boolean {
+  return triggerCommandListeners(editor, command, payload);
 }

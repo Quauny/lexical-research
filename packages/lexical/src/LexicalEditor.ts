@@ -7,15 +7,25 @@ import {
   LexicalNode,
   NodeKey,
 } from './LexicalNode';
-import { internalGetActiveEditor } from './LexicalUpdates';
-import { createUID, getCachedClassNameArray } from './LexicalUtils';
+import {
+  $commitPendingUpdates,
+  internalGetActiveEditor,
+  triggerListeners,
+  updateEditor,
+} from './LexicalUpdates';
+import {
+  createUID,
+  getCachedClassNameArray,
+  getDefaultView,
+} from './LexicalUtils';
 import { LineBreakNode } from './nodes/LexicalLineBreakNode';
 import { RootNode } from './nodes/LexicalRootNode';
 import { TextNode } from './nodes/LexicalTextNode';
 import { TabNode } from './nodes/LexicalTabNode';
 import { ParagraphNode } from './nodes/LexicalParagraphNode';
 import { FULL_RECONCILE, NO_DIRTY_NODES } from './LexicalConstants';
-import { removeRootElementEvents } from './LexicalEvents';
+import { addRootElementEvents, removeRootElementEvents } from './LexicalEvents';
+import { initMutationObserver } from './LexicalMutations';
 
 type GenericConstructor<T> = new (...args: any[]) => T;
 export type KlassConstructor<Cls extends GenericConstructor<any>> =
@@ -148,9 +158,20 @@ type Listeners = {
   update: Set<UpdateListener>;
 };
 
+export type Listener =
+  | DecoratorListener
+  | EditableListener
+  | MutationListener
+  | RootListener
+  | TextContentListener
+  | UpdateListener;
+
 export type LexicalCommand<TPayload> = {
   type?: string;
 };
+
+export type CommandPayloadType<TCommand extends LexicalCommand<unknown>> =
+  TCommand extends LexicalCommand<infer TPayload> ? TPayload : never;
 
 export type CommandListener<P> = (payload: P, editor: LexicalEditor) => boolean;
 
@@ -433,6 +454,44 @@ export class LexicalEditor {
           prevRootElement.classList.remove(...classNames);
         }
       }
+
+      if (nextRootElement !== null) {
+        const windowObj = getDefaultView(nextRootElement);
+        const style = nextRootElement.style;
+        style.userSelect = 'text';
+        style.whiteSpace = 'pre-wrap';
+        style.wordBreak = 'break-word';
+        nextRootElement.setAttribute('data-lexical-editor', 'true');
+        this._window = windowObj;
+        this._dirtyType = FULL_RECONCILE;
+        initMutationObserver(this);
+
+        this._updateTags.add('history-merge');
+
+        $commitPendingUpdates(this);
+
+        // EXTERNAL TODO: remove this flag once we no longer use UEv2 internally
+        if (!this._config.disableEvents) {
+          addRootElementEvents(nextRootElement, this);
+        }
+        if (classNames != null) {
+          nextRootElement.classList.add(...classNames);
+        }
+      } else {
+        this._editorState = pendingEditorState;
+        this._pendingEditorState = null;
+        this._window = null;
+      }
+
+      triggerListeners('root', this, false, nextRootElement, prevRootElement);
     }
+  }
+
+  isEditable(): boolean {
+    return this._editable;
+  }
+
+  update(updateFn: () => void, options?: EditorUpdateOptions): void {
+    updateEditor(this, updateFn, options);
   }
 }
